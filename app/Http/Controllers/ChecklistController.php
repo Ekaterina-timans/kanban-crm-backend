@@ -28,9 +28,11 @@ class ChecklistController extends Controller
         ]);
 
         $checklist = $task->checklists()->create($validated);
+        $column = $task->column;
+        $space = $column->space;
 
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
@@ -38,6 +40,12 @@ class ChecklistController extends Controller
             changes: [
                 'checklist_id' => $checklist->id,
                 'title' => $checklist->title,
+                'task_id' => $task->id,
+                'task_name' => $task->name,
+                'column_id' => $column->id,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
             ]
         );
 
@@ -52,12 +60,14 @@ class ChecklistController extends Controller
         ]);
 
         $task = $checklist->task;
+        $column = $task->column;
+        $space = $column->space;
         $oldTitle = $checklist->title;
 
         $checklist->update($validated);
 
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
@@ -66,6 +76,12 @@ class ChecklistController extends Controller
                 'checklist_id' => $checklist->id,
                 'old_title' => $oldTitle,
                 'new_title' => $checklist->title,
+                'task_id' => $task->id,
+                'task_name' => $task->name,
+                'column_id' => $column->id,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
             ]
         );
 
@@ -76,11 +92,18 @@ class ChecklistController extends Controller
     public function destroy(Checklist $checklist): JsonResponse
     {
         $task = $checklist->task;
+        $column = $task->column;
+        $space = $column->space;
 
         $snapshot = [
             'checklist_id' => $checklist->id,
             'title' => $checklist->title,
             'task_id' => $checklist->task_id,
+            'task_name' => $task->name,
+            'column_id' => $column->id,
+            'column_name' => $column->name,
+            'space_id' => $space->id,
+            'space_name' => $space->name,
         ];
 
         $checklist->delete();

@@ -19,15 +19,22 @@ class ColumnController extends Controller
             'position' => 'required|integer'
         ]);
 
+        $space = Space::findOrFail($validated['space_id']);
         $column = Column::create($validated);
 
         ActivityLogService::log(
-            groupId: Space::find($validated['space_id'])->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'column',
             entityId: $column->id,
             action: 'created',
-            changes: $column->only(['name', 'color', 'position'])
+            changes: [
+                'name' => $column->name,
+                'color' => $column->color,
+                'position' => $column->position,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+            ]
         );
 
         return response()->json($column, 201);
@@ -35,7 +42,7 @@ class ColumnController extends Controller
 
     public function update(Request $request, $column): JsonResponse
     {
-        $column = Column::findOrFail($column);
+        $column = Column::with('space')->findOrFail($column);
         $oldData = $column->only(['name', 'color', 'position']);
         // Использованием sometimes, что означает, что только переданные поля будут проверяться. Это полезно для частичного обновления
         $validated = $request->validate([
@@ -54,7 +61,9 @@ class ColumnController extends Controller
             action: 'updated',
             changes: [
                 'old' => $oldData,
-                'new' => $column->only(['name', 'color', 'position'])
+                'new' => $column->only(['name', 'color', 'position']),
+                'space_id' => $column->space->id,
+                'space_name' => $column->space->name,
             ]
         );
 
@@ -73,14 +82,18 @@ class ColumnController extends Controller
            Column::where('id', $col['id'])->update(['position' => $col['position']]);
         }
 
-        $anyColumn = Column::find($validated['columns'][0]['id']);
+        $anyColumn = Column::with('space')->find($validated['columns'][0]['id']);
         ActivityLogService::log(
             groupId: $anyColumn->space->group_id,
             userId: $request->user()->id,
             entityType: 'column',
             entityId: null,
             action: 'order_updated',
-            changes: $validated['columns']
+            changes: [
+                'columns' => $validated['columns'],
+                'space_id' => $anyColumn->space->id,
+                'space_name' => $anyColumn->space->name,
+            ]
         );
 
         return response()->json(null, 200);
@@ -88,8 +101,10 @@ class ColumnController extends Controller
 
     public function destroy($column): JsonResponse
     {
-        $column = Column::findOrFail($column);
-        $snapshot = $column->only(['id', 'name', 'color', 'position', 'space_id']);
+        $column = Column::with('space')->findOrFail($column);
+        $snapshot = $column->only(['id', 'name', 'color', 'position']);
+        $snapshot['space_id'] = $column->space->id;
+        $snapshot['space_name'] = $column->space->name;
         $groupId = $column->space->group_id;
 
         $column->delete();

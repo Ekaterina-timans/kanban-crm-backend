@@ -59,18 +59,18 @@ class SpacePermissionMiddleware
 
     private function resolveSpace(Request $request): ?Space
     {
-        // === 1) Прямой маршрут /spaces/{id} или /spaces/{space} ===
+        /** Прямой параметр /spaces/{id} */
         if ($request->route('space')) {
-            $param = $request->route('space');
-            return is_numeric($param) ? Space::find($param) : $param;
+            $p = $request->route('space');
+            return is_numeric($p) ? Space::find($p) : $p;
         }
 
         if ($request->route('id')) {
-            $param = $request->route('id');
-            return is_numeric($param) ? Space::find($param) : $param;
+            $p = $request->route('id');
+            return is_numeric($p) ? Space::find($p) : $p;
         }
 
-        // === 2) Column ===
+        /** Column */
         if ($request->route('column')) {
             $col = $request->route('column');
             if ($col instanceof Column) return $col->space;
@@ -78,47 +78,57 @@ class SpacePermissionMiddleware
             return $col?->space;
         }
 
-        // === 3) Task ===
+        /** Task */
         if ($request->route('task')) {
             $task = $request->route('task');
             if ($task instanceof Task) return $task->column->space;
+
             $task = Task::with('column.space')->find($task);
             return $task?->column?->space;
         }
 
-        // === 4) Checklist ===
+        /** Checklist */
         if ($request->route('checklist')) {
             $ch = $request->route('checklist');
             if ($ch instanceof Checklist) return $ch->task->column->space;
+
             $ch = Checklist::with('task.column.space')->find($ch);
             return $ch?->task?->column?->space;
         }
 
-        // === 5) ChecklistItem ===
+        /** ChecklistItem */
         if ($request->route('checklist_item')) {
             $item = $request->route('checklist_item');
             if ($item instanceof ChecklistItem) return $item->checklist->task->column->space;
+
             $item = ChecklistItem::with('checklist.task.column.space')->find($item);
             return $item?->checklist?->task?->column?->space;
         }
 
-        // === 6) Comment ===
+        /** Comment */
         if ($request->route('comment')) {
             $comment = $request->route('comment');
             if ($comment instanceof Comment) return $comment->task->column->space;
+
             $comment = Comment::with('task.column.space')->find($comment);
             return $comment?->task?->column?->space;
         }
 
-        // === 7) update-order columns ===
+        /** update-order columns */
         if ($request->input('columns.0.id')) {
             $col = Column::with('space')->find($request->input('columns.0.id'));
             return $col?->space;
         }
 
-        // === 8) store column ===
+        /** store column */
         if ($request->input('space_id')) {
             return Space::find($request->input('space_id'));
+        }
+
+        /** store task (column_id) */
+        if ($request->input('column_id')) {
+            $col = Column::with('space')->find($request->input('column_id'));
+            return $col?->space;
         }
 
         return null;

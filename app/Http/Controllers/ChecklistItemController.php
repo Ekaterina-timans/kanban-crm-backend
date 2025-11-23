@@ -23,9 +23,11 @@ class ChecklistItemController extends Controller
 
         $item = $checklist->items()->create($validated);
         $task = $checklist->task;
+        $column = $task->column;
+        $space = $column->space;
 
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
@@ -36,6 +38,14 @@ class ChecklistItemController extends Controller
                 'name' => $item->name,
                 'assignee_id' => $item->assignee_id,
                 'due_date' => $item->due_date,
+                'checklist_id' => $checklist->id,
+                'checklist_title' => $checklist->title,
+                'task_id' => $task->id,
+                'task_name' => $task->name,
+                'column_id' => $column->id,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
             ]
         );
 
@@ -55,6 +65,8 @@ class ChecklistItemController extends Controller
         ]);
 
         $task = $checklist_item->checklist->task;
+        $column = $task->column;
+        $space  = $column->space;
         $old = $checklist_item->only(['name', 'assignee_id', 'due_date', 'completed']);
 
         $checklist_item->update($validated);
@@ -71,6 +83,14 @@ class ChecklistItemController extends Controller
                 'item_id' => $checklist_item->id,
                 'old' => $old,
                 'new' => $new,
+                'checklist_id' => $checklist_item->checklist->id,
+                'checklist_title' => $checklist_item->checklist->title,
+                'task_id' => $task->id,
+                'task_name' => $task->name,
+                'column_id' => $column->id,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
             ]
         );
 
@@ -83,15 +103,25 @@ class ChecklistItemController extends Controller
      */
     public function destroy(ChecklistItem $checklist_item): JsonResponse
     {
-        $task = $checklist_item->checklist->task;
+        $checklist = $checklist_item->checklist;
+        $task = $checklist->task;
+        $column = $task->column;
+        $space = $column->space;
 
         $snapshot = [
             'item_id' => $checklist_item->id,
-            'checklist_id' => $checklist_item->checklist_id,
             'name' => $checklist_item->name,
             'assignee_id' => $checklist_item->assignee_id,
             'due_date' => $checklist_item->due_date,
             'completed' => $checklist_item->completed,
+            'checklist_id' => $checklist->id,
+            'checklist_title' => $checklist->title,
+            'task_id' => $task->id,
+            'task_name' => $task->name,
+            'column_id' => $column->id,
+            'column_name' => $column->name,
+            'space_id' => $space->id,
+            'space_name' => $space->name,
         ];
 
         $checklist_item->delete();

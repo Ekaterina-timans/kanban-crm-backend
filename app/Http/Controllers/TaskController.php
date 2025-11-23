@@ -37,19 +37,27 @@ class TaskController extends Controller
 
         $task = Task::create($validated);
 
-        $column = Column::find($validated['column_id']);
-        $groupId = $column->space->group_id;
+        $column = Column::with('space')->findOrFail($validated['column_id']);
+        $space = $column->space;
 
         ActivityLogService::log(
-            groupId: $groupId,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'created',
-            changes: $task->only([
-                'name', 'description', 'column_id',
-                'assignee_id', 'priority_id', 'status_id', 'due_date'
-            ])
+            changes: [
+                'name' => $task->name,
+                'description' => $task->description,
+                'assignee_id' => $task->assignee_id,
+                'status_id' => $task->status_id,
+                'priority_id' => $task->priority_id,
+                'due_date' => $task->due_date,
+                'column_id' => $column->id,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+            ]
         );
 
         return response()->json($task, 201);
@@ -75,20 +83,28 @@ class TaskController extends Controller
             'column_id' => 'required|exists:columns,id',
         ]);
 
-        $old = $task->column_id;
+        $oldColumn = $task->column;
+        $newColumn = Column::with('space')->findOrFail($validated['column_id']);
 
         $task->column_id = $validated['column_id'];
         $task->save();
 
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $newColumn->space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'column_changed',
             changes: [
-                'old_column' => $old,
-                'new_column' => $validated['column_id']
+                'old_column_id' => $oldColumn->id,
+                'old_column_name' => $oldColumn->name,
+
+                'new_column_id' => $newColumn->id,
+                'new_column_name' => $newColumn->name,
+
+                'space_id' => $newColumn->space->id,
+                'space_name' => $newColumn->space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -104,15 +120,21 @@ class TaskController extends Controller
         $old = $task->name;
         $task->update(['name' => $validated['name']]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'renamed',
             changes: [
                 'old' => $old,
-                'new' => $validated['name']
+                'new' => $validated['name'],
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
             ]
         );
 
@@ -132,15 +154,22 @@ class TaskController extends Controller
         $old = $task->description;
         $task->update(['description' => $validated['description']]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'description_updated',
             changes: [
                 'old' => $old,
-                'new' => $validated['description']
+                'new' => $validated['description'],
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -160,15 +189,22 @@ class TaskController extends Controller
         $old = $task->status_id;
         $task->update(['status_id' => $validated['status_id']]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'status_updated',
             changes: [
                 'old' => $old,
-                'new' => $validated['status_id']
+                'new' => $validated['status_id'],
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -188,15 +224,22 @@ class TaskController extends Controller
         $old = $task->priority_id;
         $task->update(['priority_id' => $validated['priority_id']]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'priority_updated',
             changes: [
                 'old' => $old,
-                'new' => $validated['priority_id']
+                'new' => $validated['priority_id'],
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -226,15 +269,22 @@ class TaskController extends Controller
 
         $task->update(['due_date' => $validated['due_date']]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'due_date_updated',
             changes: [
                 'old' => $old,
-                'new' => $validated['due_date'] ?? null
+                'new' => $validated['due_date'] ?? null,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -256,15 +306,22 @@ class TaskController extends Controller
             'assignee_id' => $validated['assignee_id'] ?? null
         ]);
 
+        $column = $task->column;
+        $space = $column->space;
+
         ActivityLogService::log(
-            groupId: $task->column->space->group_id,
+            groupId: $space->group_id,
             userId: $request->user()->id,
             entityType: 'task',
             entityId: $task->id,
             action: 'assignee_updated',
             changes: [
                 'old' => $old,
-                'new' => $validated['assignee_id'] ?? null
+                'new' => $validated['assignee_id'] ?? null,
+                'column_name' => $column->name,
+                'space_id' => $space->id,
+                'space_name' => $space->name,
+                'task_name' => $task->name,
             ]
         );
 
@@ -278,16 +335,21 @@ class TaskController extends Controller
 
     public function destroy(Task $task): JsonResponse
     {
+        $column = $task->column;
+        $space = $column->space;
+
         $snapshot = $task->only([
             'id', 'name', 'column_id', 'assignee_id',
             'status_id', 'priority_id', 'due_date'
         ]);
-        $groupId = $task->column->space->group_id;
+        $snapshot['column_name'] = $column->name;
+        $snapshot['space_id'] = $space->id;
+        $snapshot['space_name'] = $space->name;
 
         $task->delete();
 
         ActivityLogService::log(
-            groupId: $groupId,
+            groupId: $space->group_id,
             userId: auth()->id(),
             entityType: 'task',
             entityId: $snapshot['id'],
