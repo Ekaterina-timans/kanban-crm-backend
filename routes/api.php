@@ -12,6 +12,7 @@ use App\Http\Controllers\GroupController;
 use App\Http\Controllers\SpaceController;
 use App\Http\Controllers\TaskController;
 use App\Http\Controllers\GroupInvitationController;
+use App\Http\Controllers\GroupStatisticsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PermissionController;
@@ -19,6 +20,7 @@ use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SpaceUserController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
+use App\Http\Controllers\UserStatisticsController;
 use Illuminate\Support\Facades\Broadcast;
 use Illuminate\Support\Facades\Route;
 
@@ -90,6 +92,26 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::post('/', [ChatController::class, 'store']);  // создать чат
             });
         });  
+    });
+
+    Route::prefix('/statistics')->group(function () {
+        Route::get('/personal', [UserStatisticsController::class, 'personal']);
+
+        Route::get('/tasks', [UserStatisticsController::class, 'tasks']);
+        Route::get('/statuses', [UserStatisticsController::class, 'statuses']);
+        Route::get('/priorities', [UserStatisticsController::class, 'priorities']);
+        Route::get('/checklist', [UserStatisticsController::class, 'checklist']);
+        Route::get('/hour-activity', [UserStatisticsController::class, 'hourActivity']);
+        Route::get('/productivity', [UserStatisticsController::class, 'productivity']);
+    });
+
+    Route::prefix('statistics/group')->group(function () {
+        Route::get('/top-users', [GroupStatisticsController::class, 'topUsers']);
+        Route::get('/tasks-dynamics', [GroupStatisticsController::class, 'tasksDynamics']);
+        Route::get('/workload', [GroupStatisticsController::class, 'workload']);
+        Route::get('/spaces', [GroupStatisticsController::class, 'spaces']);
+        Route::get('/overdue', [GroupStatisticsController::class, 'overdue']);
+        Route::get('/team-hours', [GroupStatisticsController::class, 'teamHours']);
     });
 
     /** Чаты (вне группы) */
