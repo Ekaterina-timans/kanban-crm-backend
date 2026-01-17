@@ -4,6 +4,7 @@ namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
@@ -17,6 +18,8 @@ class User extends Authenticatable
         'email',
         'password',
         'avatar',
+        'access_level',
+        'account_status',
     ];
 
     protected $hidden = [
@@ -28,14 +31,24 @@ class User extends Authenticatable
         'password' => 'hashed',
     ];
 
+    public function isSystemAdmin(): bool
+    {
+        return $this->access_level === 'admin';
+    }
+
+    public function isAccountBlocked(): bool
+    {
+        return $this->account_status === 'blocked';
+    }
+
     /**
      * Группы, в которых состоит пользователь (многие ко многим).
      */
     public function groups()
     {
         return $this->belongsToMany(Group::class, 'user_groups')
-                    ->withPivot('role')
-                    ->withTimestamps();
+            ->withPivot(['role', 'status'])
+            ->withTimestamps();
     }
 
     /**
@@ -61,5 +74,10 @@ class User extends Authenticatable
     public function spaceUsers()
     {
         return $this->hasMany(SpaceUser::class);
+    }
+
+    public function notificationSetting(): HasOne
+    {
+        return $this->hasOne(NotificationSetting::class);
     }
 }

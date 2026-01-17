@@ -1,6 +1,10 @@
 <?php
 
 use App\Http\Controllers\ActivityLogController;
+use App\Http\Controllers\AdminGroupController;
+use App\Http\Controllers\AdminProfileController;
+use App\Http\Controllers\AdminStatisticsController;
+use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\ChatController;
@@ -15,6 +19,7 @@ use App\Http\Controllers\GroupInvitationController;
 use App\Http\Controllers\GroupStatisticsController;
 use App\Http\Controllers\MessageController;
 use App\Http\Controllers\NotificationController;
+use App\Http\Controllers\NotificationSettingsController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SpaceUserController;
@@ -35,13 +40,52 @@ use Illuminate\Support\Facades\Route;
 |
 */
 
-Route::post('/register', [AuthController::class, 'register']);
-Route::post('/login', [AuthController::class, 'login']);
-Route::post('/logout', [AuthController::class, 'logout']);
+Route::middleware('web')->group(function () {
+    Route::post('/register', [AuthController::class, 'register']);
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::post('/logout', [AuthController::class, 'logout']);
+});
 
 Broadcast::routes(['middleware' => ['auth:sanctum']]);
 
 Route::post('/groups/group-invitations/accept', [GroupInvitationController::class, 'accept']);
+
+Route::middleware(['auth:sanctum', 'admin.access'])->prefix('admin')->group(function () {
+    // Пользователи
+    Route::prefix('users')->group(function () {
+        Route::get('/', [AdminUserController::class, 'index']);
+        Route::get('/{user}', [AdminUserController::class, 'show']);
+        Route::patch('/{user}/block', [AdminUserController::class, 'block']);
+        Route::patch('/{user}/unblock', [AdminUserController::class, 'unblock']);
+        Route::delete('/{user}', [AdminUserController::class, 'destroy']);
+        Route::patch('/{user}/groups/{group}/block', [AdminUserController::class, 'blockInGroup']);
+        Route::patch('/{user}/groups/{group}/unblock', [AdminUserController::class, 'unblockInGroup']);
+        Route::patch('/{user}/promote', [AdminUserController::class, 'promoteToAdmin']);
+        Route::patch('/{user}/demote', [AdminUserController::class, 'demoteFromAdmin']);
+    });
+
+    // Группы
+    Route::prefix('groups')->group(function () {
+        Route::get('/', [AdminGroupController::class, 'index']);
+        Route::get('/{group}', [AdminGroupController::class, 'show']);
+        Route::delete('/{group}', [AdminGroupController::class, 'destroy']);
+    });
+    
+    // Статистика
+    Route::prefix('statistics')->group(function () {
+        Route::get('/users-total', [AdminStatisticsController::class, 'usersTotal']);
+        Route::get('/users-blocked', [AdminStatisticsController::class, 'usersBlocked']);
+        Route::get('/groups-total', [AdminStatisticsController::class, 'groupsTotal']);
+        Route::get('/groups-activity', [AdminStatisticsController::class, 'groupsActivity']);
+        Route::get('/groups-inactive', [AdminStatisticsController::class, 'inactiveGroups']);
+    });
+
+    // Профиль админа
+    Route::prefix('profile')->group(function () {
+        Route::get('/', [AdminProfileController::class, 'show']);
+        Route::post('/', [AdminProfileController::class, 'update']); 
+    });
+});
 
 Route::middleware('auth:sanctum')->group(function () {
     /** Профиль */
@@ -159,6 +203,11 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::get('/', [NotificationController::class, 'index']);
         Route::get('/unread', [NotificationController::class, 'unread']);
         Route::post('/read', [NotificationController::class, 'markAllRead']);
+    });
+
+    Route::prefix('notification-settings')->group(function () {
+        Route::get('/', [NotificationSettingsController::class, 'show']);
+        Route::put('/', [NotificationSettingsController::class, 'update']);
     });
 
     /** Пространства */

@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Column;
 use App\Models\Task;
+use App\Notifications\TaskAssignedEmailNotification;
+use App\Notifications\TaskAssignedInAppNotification;
 use App\Services\ActivityLogService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -36,6 +38,24 @@ class TaskController extends Controller
         }
 
         $task = Task::create($validated);
+
+        if (!empty($task->assignee_id) && (int)$task->assignee_id !== (int)auth()->id()) {
+            $assignee = \App\Models\User::query()->find($task->assignee_id);
+
+            if ($assignee) {
+                $st = \App\Models\NotificationSetting::query()
+                    ->where('user_id', $assignee->id)
+                    ->first();
+
+                if ((bool)($st?->inapp_task_assigned)) {
+                    $assignee->notify(new TaskAssignedInAppNotification($task));
+                }
+
+                if ((bool)($st?->email_task_assigned)) {
+                    $assignee->notify(new TaskAssignedEmailNotification($task));
+                }
+            }
+        }
 
         $column = Column::with('space')->findOrFail($validated['column_id']);
         $space = $column->space;
@@ -305,6 +325,30 @@ class TaskController extends Controller
         $task->update([
             'assignee_id' => $validated['assignee_id'] ?? null
         ]);
+
+        $newAssigneeId = $validated['assignee_id'] ?? null;
+
+        // если назначили на кого-то (не null) и это не тот, кто делал действие
+        if (!empty($newAssigneeId) && (int)$newAssigneeId !== (int)$request->user()->id) {
+            // важно: слать только если реально изменилось
+            if ((int)$old !== (int)$newAssigneeId) {
+                $assignee = \App\Models\User::query()->find($newAssigneeId);
+
+                if ($assignee) {
+                    $st = \App\Models\NotificationSetting::query()
+                        ->where('user_id', $assignee->id)
+                        ->first();
+
+                    if ((bool)($st?->inapp_task_assigned)) {
+                        $assignee->notify(new TaskAssignedInAppNotification($task));
+                    }
+
+                    if ((bool)($st?->email_task_assigned)) {
+                        $assignee->notify(new TaskAssignedEmailNotification($task));
+                    }
+                }
+            }
+        }
 
         $column = $task->column;
         $space = $column->space;

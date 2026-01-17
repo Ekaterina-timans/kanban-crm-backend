@@ -6,6 +6,7 @@ use App\Models\Group;
 use App\Models\Permission;
 use App\Models\Space;
 use App\Services\ActivityLogService;
+use App\Services\SpacePermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
@@ -47,7 +48,7 @@ class SpaceController extends Controller
     }
 
     // Создать новое пространство
-    public function store(Request $request): JsonResponse
+    public function store(Request $request, SpacePermissionService $permissionService): JsonResponse
     {
         $validated = $request->validate([
             'group_id' => 'required|exists:groups,id',
@@ -78,7 +79,7 @@ class SpaceController extends Controller
         ]);
 
         // Назначаем дефолтные права для владельца
-        app(SpaceUserController::class)->assignDefaultPermissions($spaceUser);
+       $permissionService->assignDefaultPermissions($spaceUser);
 
         ActivityLogService::log(
             groupId: $space->group_id,
@@ -98,15 +99,93 @@ class SpaceController extends Controller
         );
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         Log::info('SpaceController@show called', ['id' => $id]);
-        // Получаем пространство по ID с колонками и задачами,
-        // но сортируем колонки по position!
+
+        $filters = $request->validate([
+            'task_q' => 'nullable|string|max:100',
+            'assignee_id' => 'nullable|integer|exists:users,id',
+            'status_id' => 'nullable|integer|exists:statuses,id',
+            'priority_id' => 'nullable|integer|exists:priorities,id',
+            'due_from' => 'nullable|date',
+            'due_to' => 'nullable|date',
+            'task_sort' => 'nullable|in:created_at,due_date',
+            'task_order' => 'nullable|in:asc,desc',
+        ]);
+
+        // фильтр активен, если есть хотя бы одно непустое значение
+        $hasFilters = collect($filters)->only([
+            'task_q', 'assignee_id', 'status_id', 'priority_id', 'due_from', 'due_to'
+        ])->filter(fn($v) => $v !== null && $v !== '')->isNotEmpty();
+
+        $taskSort = $filters['task_sort'] ?? 'created_at';
+        $taskOrder = $filters['task_order'] ?? 'desc';
+
+        // Базовый query для задач по фильтру (используем и для with, и для whereHas)
+        $applyTaskFilters = function ($query) use ($filters) {
+            if (!empty($filters['task_q'])) {
+                $q = $filters['task_q'];
+                $query->where(function ($sub) use ($q) {
+                    $sub->where('name', 'like', "%{$q}%")
+                        ->orWhere('description', 'like', "%{$q}%");
+                });
+            }
+
+            if (!empty($filters['assignee_id'])) {
+                $query->where('assignee_id', $filters['assignee_id']);
+            }
+
+            if (!empty($filters['status_id'])) {
+                $query->where('status_id', $filters['status_id']);
+            }
+
+            if (!empty($filters['priority_id'])) {
+                $query->where('priority_id', $filters['priority_id']);
+            }
+
+            if (!empty($filters['due_from'])) {
+                $query->whereDate('due_date', '>=', $filters['due_from']);
+            }
+
+            if (!empty($filters['due_to'])) {
+                $query->whereDate('due_date', '<=', $filters['due_to']);
+            }
+        };
+
+        $applyTaskSorting = function ($query) use ($taskSort, $taskOrder) {
+            if ($taskSort === 'due_date') {
+                // MySQL/MariaDB: задачи без due_date будут внизу
+                $query->orderByRaw('due_date IS NULL ASC');
+                $query->orderBy('due_date', $taskOrder);
+
+                // чтобы порядок был стабильный для задач с одинаковой due_date
+                $query->orderBy('created_at', 'desc');
+            } else {
+                $query->orderBy('created_at', $taskOrder);
+            }
+        };
+
         $space = Space::with([
-            'columns' => function ($query) {
-                $query->orderBy('position');
+            'columns' => function ($colQ) use ($hasFilters, $applyTaskFilters) {
+                $colQ->orderBy('position');
+
+                // если фильтры активны — возвращаем только колонки, где есть задачи по фильтру
+                if ($hasFilters) {
+                    $colQ->whereHas('tasks', function ($taskQ) use ($applyTaskFilters) {
+                        $applyTaskFilters($taskQ);
+                    });
+                }
             },
+
+            'columns.tasks' => function ($taskQ) use ($hasFilters, $applyTaskFilters, $applyTaskSorting) {
+                if ($hasFilters) {
+                    $applyTaskFilters($taskQ);
+                }
+
+                $applyTaskSorting($taskQ);
+            },
+
             'columns.tasks.assignee:id,name,email,avatar',
         ])->find($id);
 

@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Permission;
 use App\Models\Space;
 use App\Models\SpaceUser;
+use App\Services\SpacePermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -49,7 +50,7 @@ class SpaceUserController extends Controller
         $spaceUser = $space->spaceUsers()->create($data);
 
         // Назначаем базовые права для роли
-        $this->assignDefaultPermissions($spaceUser);
+        app(SpacePermissionService::class)->assignDefaultPermissions($spaceUser);
 
         return response()->json($spaceUser->load('permissions'), 201);
     }
@@ -99,7 +100,7 @@ class SpaceUserController extends Controller
         $spaceUser->update(['role' => $data['role']]);
 
         // При смене роли — обновляем дефолтные права
-        $this->assignDefaultPermissions($spaceUser);
+        app(SpacePermissionService::class)->assignDefaultPermissions($spaceUser);
 
         return response()->json([
             'message' => 'Role updated successfully',
@@ -138,38 +139,5 @@ class SpaceUserController extends Controller
     {
         $spaceUser->delete();
         return response()->json(['message' => 'User removed from space']);
-    }
-
-    /**
-     * Вспомогательный метод — назначить базовые права для роли
-     */
-    private function assignDefaultPermissions(SpaceUser $spaceUser): void
-    {
-        if ($spaceUser->role === 'owner') {
-            $allPermissionIds = Permission::pluck('id');
-            $spaceUser->permissions()->sync($allPermissionIds);
-            return;
-        }
-
-        $permissionsByRole = [
-            'editor' => [
-                'space_read', 'space_edit',
-                'column_read', 'column_create', 'column_edit', 'column_delete',
-                'task_read', 'task_create', 'task_edit', 'task_delete',
-                'comment_read', 'comment_create'
-            ],
-            'viewer' => [
-                'space_read',
-                'column_read',
-                'task_read',
-                'comment_read',
-            ],
-        ];
-
-        $role = $spaceUser->role;
-        $permissionNames = $permissionsByRole[$role] ?? [];
-        $permissionIds = Permission::whereIn('name', $permissionNames)->pluck('id');
-
-        $spaceUser->permissions()->sync($permissionIds);
     }
 }

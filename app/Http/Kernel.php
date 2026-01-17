@@ -67,5 +67,6 @@ class Kernel extends HttpKernel
         'verified' => \Illuminate\Auth\Middleware\EnsureEmailIsVerified::class,
         'space.permission' => \App\Http\Middleware\SpacePermissionMiddleware::class,
         'group.access' => \App\Http\Middleware\EnsureGroupAccess::class,
+        'admin.access' => \App\Http\Middleware\AdminAccess::class,
     ];
 }

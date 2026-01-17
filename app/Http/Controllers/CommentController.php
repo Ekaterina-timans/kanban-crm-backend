@@ -3,7 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\Models\Comment;
+use App\Models\NotificationSetting;
 use App\Models\Task;
+use App\Models\User;
+use App\Notifications\CommentMentionInAppNotification;
+use App\Notifications\CommentOnAssignedTaskEmailNotification;
+use App\Notifications\CommentOnAssignedTaskInAppNotification;
+use App\Notifications\CommentOnMyTaskEmailNotification;
+use App\Notifications\CommentOnMyTaskInAppNotification;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -80,6 +87,93 @@ class CommentController extends Controller
                     'sha256'        => hash_file('sha256', $file->getRealPath()),
                     'meta'          => null,
                 ]);
+            }
+        }
+
+        $authorId = Auth::id();
+
+        // потенциальные получатели:
+        // 1) создатель задачи (если не автор коммента)
+        // 2) assignee задачи (если не автор коммента)
+        // + потом упоминания (если включены) с приоритетом
+
+        $recipientIds = [];
+
+        // создатель задачи (предполагаю поле author_id; если у тебя другое — скажи)
+        if (!empty($task->author_id) && (int)$task->author_id !== (int)$authorId) {
+            $recipientIds[] = (int)$task->author_id;
+        }
+
+        // ответственный
+        if (!empty($task->assignee_id) && (int)$task->assignee_id !== (int)$authorId) {
+            $recipientIds[] = (int)$task->assignee_id;
+        }
+
+        $recipientIds = array_values(array_unique($recipientIds));
+
+        // упомянутые (кроме автора)
+        $mentionedIds = array_values(array_unique(array_map('intval', $data['mentioned_user_ids'] ?? [])));
+        $mentionedIds = array_values(array_filter($mentionedIds, fn($id) => (int)$id !== (int)$authorId));
+
+        // объединяем всех, кому вообще потенциально можем слать (создатель/ассайни + упоминания)
+        $allIds = array_values(array_unique(array_merge($recipientIds, $mentionedIds)));
+
+        if (!empty($allIds)) {
+            $settingsByUser = NotificationSetting::query()
+                ->whereIn('user_id', $allIds)
+                ->get()
+                ->keyBy('user_id');
+
+            $users = User::query()
+                ->whereIn('id', $allIds)
+                ->get()
+                ->keyBy('id');
+
+            // 1) Упоминания — приоритет (если включено inapp_mentions)
+            foreach ($mentionedIds as $uid) {
+                $u = $users->get($uid);
+                if (!$u) continue;
+
+                $st = $settingsByUser->get($uid);
+                if ((bool)($st?->inapp_mentions)) {
+                    $u->notify(new CommentMentionInAppNotification($task, $comment));
+                }
+            }
+
+            // 2) Комментарии к моим созданным задачам
+            if (!empty($task->author_id) && (int)$task->author_id !== (int)$authorId) {
+                $taskAuthorId = (int)$task->author_id;
+
+                // если создатель уже упомянут — не шлём ему "комментарий", чтобы не было дубля
+                if (!in_array($taskAuthorId, $mentionedIds, true)) {
+                    $u = $users->get($taskAuthorId);
+                    $st = $settingsByUser->get($taskAuthorId);
+
+                    if ($u && (bool)($st?->inapp_comments_on_my_tasks)) {
+                        $u->notify(new CommentOnMyTaskInAppNotification($task, $comment));
+                    }
+                    if ($u && (bool)($st?->email_comments_on_my_tasks)) {
+                        $u->notify(new CommentOnMyTaskEmailNotification($task, $comment));
+                    }
+                }
+            }
+
+            // 3) Комментарии к задачам, где я ответственная
+            if (!empty($task->assignee_id) && (int)$task->assignee_id !== (int)$authorId) {
+                $assigneeId = (int)$task->assignee_id;
+
+                // если ассайни уже упомянут — не шлём ему "комментарий", чтобы не было дубля
+                if (!in_array($assigneeId, $mentionedIds, true)) {
+                    $u = $users->get($assigneeId);
+                    $st = $settingsByUser->get($assigneeId);
+
+                    if ($u && (bool)($st?->inapp_comments_on_assigned_tasks)) {
+                        $u->notify(new CommentOnAssignedTaskInAppNotification($task, $comment));
+                    }
+                    if ($u && (bool)($st?->email_comments_on_assigned_tasks)) {
+                        $u->notify(new CommentOnAssignedTaskEmailNotification($task, $comment));
+                    }
+                }
             }
         }
 

@@ -6,6 +6,11 @@ use App\Events\MessageCreated;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
+use App\Models\NotificationSetting;
+use App\Models\User;
+use App\Notifications\ChatMentionInAppNotification;
+use App\Notifications\ChatMessageEmailNotification;
+use App\Notifications\ChatMessageInAppNotification;
 use Illuminate\Broadcasting\BroadcastException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -151,7 +156,51 @@ class MessageController extends Controller
         // Обновляем last_message_id чата
         $chat->update(['last_message_id' => $msg->id]);
 
-        // broadcast(new MessageCreated($msg, $chat));
+        // получатели: все участники чата, кроме автора
+        $recipientIds = ChatParticipant::query()
+            ->where('chat_id', $chat->id)
+            ->where('user_id', '<>', $req->user()->id)
+            ->pluck('user_id')
+            ->all();
+
+        // упомянутые: только те, кто реально получатель (участник и не автор)
+        $mentionedIds = array_values(array_unique(array_map('intval', $data['mentioned_user_ids'] ?? [])));
+        if (!empty($mentionedIds)) {
+            $mentionedIds = array_values(array_intersect($mentionedIds, $recipientIds));
+        }
+
+        if (!empty($recipientIds)) {
+            $settingsByUser = NotificationSetting::query()
+                ->whereIn('user_id', $recipientIds)
+                ->get()
+                ->keyBy('user_id');
+
+            $recipients = User::query()
+                ->whereIn('id', $recipientIds)
+                ->get();
+
+            foreach ($recipients as $recipient) {
+                $st = $settingsByUser->get($recipient->id);
+
+                $inappChatEnabled     = (bool)($st?->inapp_chat_messages);
+                $inappMentionsEnabled = (bool)($st?->inapp_mentions);
+                $emailChatEnabled     = (bool)($st?->email_chat_messages);
+
+                $isMentioned = in_array((int)$recipient->id, $mentionedIds, true);
+
+                // In-app: упомянутым шлём mention (если включено), иначе обычное "новое сообщение"
+                if ($isMentioned && $inappMentionsEnabled) {
+                    $recipient->notify(new ChatMentionInAppNotification($chat, $msg));
+                } elseif ($inappChatEnabled) {
+                    $recipient->notify(new ChatMessageInAppNotification($chat, $msg));
+                }
+
+                // Email: только общий переключатель "Новые сообщения в чате"
+                if ($emailChatEnabled) {
+                    $recipient->notify(new ChatMessageEmailNotification($chat, $msg));
+                }
+            }
+        }
 
         // Broadcast события всем участникам чата
         try {

@@ -34,6 +34,16 @@ class Group extends Model
                     ->withTimestamps();
     }
 
+    public function spaces()
+    {
+        return $this->hasMany(Space::class, 'group_id');
+    }
+
+    public function activityLogs()
+    {
+        return $this->hasMany(ActivityLog::class, 'group_id');
+    }
+
     public function canInvite($userId)
     {
         $member = $this->users()->where('user_id', $userId)->first();

@@ -18,8 +18,18 @@ class AuthController extends Controller
             'email' => $data['email'],
             'password' => bcrypt($data['password']),
         ]);
+        
         Auth::login($user);
-        return response()->json(['user' => $user]);
+
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'email' => $user->email,
+                'name' => $user->name,
+                'avatar' => $user->avatar,
+                'access_level' => $user->access_level,
+            ]
+        ]);
     }
 
     public function login(Request $request) {
@@ -30,7 +40,18 @@ class AuthController extends Controller
         if (!Auth::attempt($data)) {
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
-        return response()->json(['user' => Auth::user()]);
+
+        $user = Auth::user();
+
+        return response()->json([
+            'user' => [
+                'id' => $user->id,
+                'email' => $user->email,
+                'name' => $user->name,
+                'avatar' => $user->avatar,
+                'access_level' => $user->access_level,
+            ]
+        ]);
     }
 
     public function user(Request $request) {
