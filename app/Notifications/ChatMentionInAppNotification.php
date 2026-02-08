@@ -23,11 +23,16 @@ class ChatMentionInAppNotification extends Notification
 
     public function toDatabase($notifiable): array
     {
+        $from = $this->message->user;
+
         return [
             'type' => 'chat_mention',
             'chat_id' => $this->chat->id,
+            'chat_type' => $this->chat->type,
+            'chat_title' => $this->chat->type === 'group' ? ($this->chat->title ?? null) : null,
             'message_id' => $this->message->id,
             'from_user_id' => $this->message->user_id,
+            'from_user_email' => $from->email,
             'text' => $this->message->content ?? null,
             'created_at' => $this->message->created_at,
         ];

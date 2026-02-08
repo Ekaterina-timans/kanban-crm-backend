@@ -19,6 +19,9 @@ class TaskAssignedInAppNotification extends Notification
 
     public function toDatabase($notifiable): array
     {
+        $task = $this->task->loadMissing('author:id,email');
+        $from = $task->author;
+
         return [
             'type' => 'task_assigned',
             'task_id' => $this->task->id,
@@ -26,6 +29,7 @@ class TaskAssignedInAppNotification extends Notification
             'column_id' => $this->task->column_id,
             'assignee_id' => $this->task->assignee_id,
             'author_id' => $this->task->author_id,
+            'from_user_email' => $from->email,
             'due_date' => $this->task->due_date,
         ];
     }

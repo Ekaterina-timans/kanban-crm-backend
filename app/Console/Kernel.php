@@ -13,6 +13,10 @@ class Kernel extends ConsoleKernel
     protected function schedule(Schedule $schedule): void
     {
         $schedule->command('notifications:deadline-reminders')->everyMinute();
+        $schedule->command('telegram:poll --timeout=25 --limit=50')
+            ->everyMinute()
+            ->withoutOverlapping(2) // чтобы 2 poll не пересекались
+            ->runInBackground();
     }
 
     /**

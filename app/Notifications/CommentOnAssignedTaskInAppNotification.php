@@ -23,11 +23,15 @@ class CommentOnAssignedTaskInAppNotification extends Notification
 
     public function toDatabase($notifiable): array
     {
+        $from = $this->comment->user;
+        
         return [
             'type' => 'comment_on_assigned_task',
             'task_id' => $this->task->id,
+            'task_name' => $this->task->name,
             'comment_id' => $this->comment->id,
             'from_user_id' => $this->comment->user_id,
+            'from_user_email' => $from->email,
             'text' => $this->comment->content ?? null,
             'created_at' => $this->comment->created_at,
         ];

@@ -7,11 +7,13 @@ use App\Http\Controllers\AdminStatisticsController;
 use App\Http\Controllers\AdminUserController;
 use App\Http\Controllers\AttachmentController;
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\ChannelMessageController;
 use App\Http\Controllers\ChatController;
 use App\Http\Controllers\ChecklistController;
 use App\Http\Controllers\ChecklistItemController;
 use App\Http\Controllers\ColumnController;
 use App\Http\Controllers\CommentController;
+use App\Http\Controllers\GroupChannelController;
 use App\Http\Controllers\GroupController;
 use App\Http\Controllers\SpaceController;
 use App\Http\Controllers\TaskController;
@@ -135,7 +137,22 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::get('/', [ChatController::class, 'index']);   // список чатов
                 Route::post('/', [ChatController::class, 'store']);  // создать чат
             });
+
+            /** Каналы (интеграции группы) */
+            Route::prefix('{group}/channels')->group(function () {
+                Route::get('/', [GroupChannelController::class, 'index']);
+                Route::post('/', [GroupChannelController::class, 'store']); // создание канала
+                Route::patch('/{channel}', [GroupChannelController::class, 'update']);
+                Route::delete('/{channel}', [GroupChannelController::class, 'destroy']);
+                Route::get('/{channel}/threads', [GroupChannelController::class, 'threadsIndex']);
+                Route::post('/{channel}/connect/telegram', [GroupChannelController::class, 'connectTelegram']); // подключение telegram и активация
+            });
         });  
+    });
+
+    Route::prefix('/threads')->group(function () {
+        Route::get('/{thread}/messages', [ChannelMessageController::class, 'index']); // история сообщений
+        Route::post('/{thread}/messages/send', [ChannelMessageController::class, 'send']); // отправка сообщений в тред
     });
 
     Route::prefix('/statistics')->group(function () {
@@ -314,4 +331,3 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::get('/activity-logs', [ActivityLogController::class, 'index']);
 });
-

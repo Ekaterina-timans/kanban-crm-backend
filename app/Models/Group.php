@@ -44,6 +44,11 @@ class Group extends Model
         return $this->hasMany(ActivityLog::class, 'group_id');
     }
 
+    public function channels() 
+    {
+        return $this->hasMany(GroupChannel::class, 'group_id');
+    }
+
     public function canInvite($userId)
     {
         $member = $this->users()->where('user_id', $userId)->first();
