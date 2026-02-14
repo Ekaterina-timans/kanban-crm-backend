@@ -23,4 +23,9 @@ class ChannelMessage extends Model
     protected $casts = [
         'payload' => 'array',
     ];
+
+    public function thread()
+    {
+        return $this->belongsTo(ChannelThread::class, 'channel_thread_id');
+    }
 }

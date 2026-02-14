@@ -7,6 +7,7 @@ use App\Models\ChannelThread;
 use App\Models\GroupChannel;
 use Illuminate\Console\Command;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -17,12 +18,6 @@ class TelegramPollUpdates extends Command
 
     public function handle()
     {
-        $token = (string) config('services.telegram.bot_token');
-        if ($token === '') {
-            $this->error('TELEGRAM_BOT_TOKEN is not configured');
-            return self::FAILURE;
-        }
-
         $channels = GroupChannel::query()
             ->where('provider', 'telegram')
             ->whereIn('status', ['active', 'error'])
@@ -34,15 +29,30 @@ class TelegramPollUpdates extends Command
         }
 
         foreach ($channels as $channel) {
+            $token = (string) data_get($channel->secrets, 'telegram.bot_token', '');
+
+            if ($token === '') {
+                Log::warning('Telegram bot token missing for channel', [
+                    'group_channel_id' => $channel->id,
+                    'group_id' => $channel->group_id,
+                ]);
+
+                $channel->status = 'error';
+                $channel->save();
+
+                $this->error("channel #{$channel->id}: bot_token is missing (set status=error)");
+                continue;
+            }
+
             $tg = $channel->settings['telegram'] ?? [];
-            $offset = (int)($tg['last_update_id'] ?? 0);
-            $offset = $offset > 0 ? $offset + 1 : null;
+            $lastUpdateId = (int)($tg['last_update_id'] ?? 0);
+            $offset = $lastUpdateId > 0 ? $lastUpdateId + 1 : null;
 
             $params = [
-                'limit' => (int)$this->option('limit'),
+                'limit' => (int) $this->option('limit'),
             ];
 
-            $timeout = (int)$this->option('timeout');
+            $timeout = (int) $this->option('timeout');
             if ($timeout > 0) {
                 $params['timeout'] = $timeout;
             }
@@ -61,6 +71,7 @@ class TelegramPollUpdates extends Command
                     'message' => $e->getMessage(),
                 ]);
 
+                // ошибка соединения — это не "disabled", это error (чтобы UI попросил проверить/переподключить при желании)
                 $channel->status = 'error';
                 $channel->save();
 
@@ -81,6 +92,22 @@ class TelegramPollUpdates extends Command
             }
 
             if (!$resp->ok()) {
+                // отдельная обработка: токен умер/невалиден
+                if ($resp->status() === 401) {
+                    Log::warning('Telegram getUpdates unauthorized (invalid bot token)', [
+                        'group_channel_id' => $channel->id,
+                        'provider' => 'telegram',
+                        'http_status' => $resp->status(),
+                        'body' => $resp->body(),
+                    ]);
+
+                    $channel->status = 'error';
+                    $channel->save();
+
+                    $this->error("channel #{$channel->id}: bot token unauthorized (401) (set status=error)");
+                    continue;
+                }
+
                 Log::error('Telegram getUpdates http failed', [
                     'group_channel_id' => $channel->id,
                     'provider' => 'telegram',
@@ -122,11 +149,13 @@ class TelegramPollUpdates extends Command
                 continue;
             }
 
-            $maxUpdateId = (int)($tg['last_update_id'] ?? 0);
+            $maxUpdateId = $lastUpdateId;
 
             foreach ($updates as $upd) {
                 $updateId = (int)($upd['update_id'] ?? 0);
-                if ($updateId > $maxUpdateId) $maxUpdateId = $updateId;
+                if ($updateId > $maxUpdateId) {
+                    $maxUpdateId = $updateId;
+                }
 
                 $msg = $upd['message'] ?? $upd['edited_message'] ?? null;
                 if (!$msg) continue;
@@ -139,6 +168,7 @@ class TelegramPollUpdates extends Command
 
                 $from = $msg['from'] ?? null;
 
+                // upsert thread
                 $thread = ChannelThread::updateOrCreate(
                     [
                         'group_channel_id' => $channel->id,
@@ -161,6 +191,7 @@ class TelegramPollUpdates extends Command
 
                 $msgId = $msg['message_id'] ?? null;
 
+                // upsert IN message
                 ChannelMessage::updateOrCreate(
                     [
                         'channel_thread_id' => $thread->id,
@@ -170,13 +201,50 @@ class TelegramPollUpdates extends Command
                     [
                         'external_update_id' => $updateId,
                         'sender_external_id' => $from ? (string)($from['id'] ?? null) : null,
-                        'text' => $msg['text'] ?? null,
+                        'text' => $msg['text'] ?? ($msg['caption'] ?? null),
                         'payload' => $msg,
                         'provider_date' => isset($msg['date']) ? (int)$msg['date'] : null,
                     ]
                 );
+
+                // update last_message_* for THIS thread (внутри цикла, а не после него)
+                $msgText = $msg['text'] ?? null;
+
+                // fallback для вложений/сервисных сообщений
+                if ($msgText === null) {
+                    if (isset($msg['photo'])) $msgText = '[photo]';
+                    elseif (isset($msg['sticker'])) $msgText = '[sticker]';
+                    elseif (isset($msg['voice'])) $msgText = '[voice]';
+                    elseif (isset($msg['video'])) $msgText = '[video]';
+                    elseif (isset($msg['document'])) $msgText = '[document]';
+                    else $msgText = '—';
+                }
+
+                $lastAt = isset($msg['date'])
+                    ? Carbon::createFromTimestamp((int)$msg['date'])
+                    : now();
+
+                $lastExternalId = $msgId !== null ? (int)$msgId : null;
+
+                // чтобы не перетирать более новым/старым мусором
+                $shouldUpdate =
+                    !$thread->last_message_at ||
+                    $lastAt->greaterThan($thread->last_message_at) ||
+                    (
+                        $lastAt->equalTo($thread->last_message_at) &&
+                        $lastExternalId !== null &&
+                        (int)$lastExternalId > (int)($thread->last_message_external_id ?? 0)
+                    );
+
+                if ($shouldUpdate) {
+                    $thread->last_message_text = $msgText;
+                    $thread->last_message_at = $lastAt;
+                    $thread->last_message_external_id = $lastExternalId;
+                    $thread->save();
+                }
             }
 
+            // persist offset
             $settings = $channel->settings ?? [];
             $settings['telegram'] = array_merge($settings['telegram'] ?? [], [
                 'last_update_id' => $maxUpdateId,

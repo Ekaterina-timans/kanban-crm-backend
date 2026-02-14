@@ -20,6 +20,14 @@ class ChannelThread extends Model
         'last_name',
         'last_update_id',
         'meta',
+        'last_message_text',
+        'last_message_at',
+        'last_message_external_id',
+    ];
+
+    protected $casts = [
+        'meta' => 'array',
+        'last_message_at' => 'datetime',
     ];
 
     public function channel()

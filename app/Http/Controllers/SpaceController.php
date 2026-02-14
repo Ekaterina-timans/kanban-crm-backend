@@ -9,6 +9,7 @@ use App\Services\ActivityLogService;
 use App\Services\SpacePermissionService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Log;
 
@@ -155,11 +156,8 @@ class SpaceController extends Controller
 
         $applyTaskSorting = function ($query) use ($taskSort, $taskOrder) {
             if ($taskSort === 'due_date') {
-                // MySQL/MariaDB: задачи без due_date будут внизу
                 $query->orderByRaw('due_date IS NULL ASC');
                 $query->orderBy('due_date', $taskOrder);
-
-                // чтобы порядок был стабильный для задач с одинаковой due_date
                 $query->orderBy('created_at', 'desc');
             } else {
                 $query->orderBy('created_at', $taskOrder);
@@ -184,6 +182,23 @@ class SpaceController extends Controller
                 }
 
                 $applyTaskSorting($taskQ);
+
+                $taskQ->addSelect([
+                    'checklists_count' => DB::table('checklists')
+                        ->selectRaw('count(*)')
+                        ->whereColumn('checklists.task_id', 'tasks.id'),
+
+                    'checklist_items_total' => DB::table('checklist_items')
+                        ->join('checklists', 'checklists.id', '=', 'checklist_items.checklist_id')
+                        ->selectRaw('count(*)')
+                        ->whereColumn('checklists.task_id', 'tasks.id'),
+
+                    'checklist_items_done' => DB::table('checklist_items')
+                        ->join('checklists', 'checklists.id', '=', 'checklist_items.checklist_id')
+                        ->selectRaw('count(*)')
+                        ->whereColumn('checklists.task_id', 'tasks.id')
+                        ->where('checklist_items.completed', 1),
+                ]);
             },
 
             'columns.tasks.assignee:id,name,email,avatar',
@@ -195,6 +210,7 @@ class SpaceController extends Controller
 
         return response()->json($space);
     }
+
 
     public function update(Request $request, $id): JsonResponse
     {

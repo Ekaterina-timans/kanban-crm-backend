@@ -18,9 +18,11 @@ class GroupChannel extends Model
         'secrets',
     ];
 
+    protected $hidden = ['secrets'];
+
     protected $casts = [
         'settings' => 'array',
-        'secrets'  => 'array',
+        'secrets'  => 'encrypted:array',
     ];
 
     public function group()

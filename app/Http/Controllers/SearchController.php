@@ -2,9 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\ChannelMessage;
+use App\Models\ChannelThread;
 use App\Models\Chat;
 use App\Models\ChatMessage;
 use App\Models\ChatParticipant;
+use App\Models\Group;
+use App\Models\GroupChannel;
 use Illuminate\Http\Request;
 
 class SearchController extends Controller
@@ -125,6 +129,126 @@ class SearchController extends Controller
                 'has_older' => $hasOlder,
                 'has_newer' => $hasNewer,
             ],
+        ]);
+    }
+
+    public function telegramGlobal(Request $req, Group $group, GroupChannel $channel)
+    {
+        // доступ: пользователь должен быть в группе
+        abort_unless(
+            $group->users()->whereKey($req->user()->id)->exists(),
+            403,
+            'Forbidden'
+        );
+
+        // канал должен принадлежать группе
+        abort_unless((int)$channel->group_id === (int)$group->id, 404, 'Channel not in group');
+
+        // только telegram
+        abort_unless($channel->provider === 'telegram', 422, 'Channel is not telegram provider');
+
+        $qRaw = trim((string)$req->query('q', ''));
+        $q = ltrim($qRaw, '@');
+        if ($q === '') {
+            return response()->json(['threads' => [], 'messages' => []]);
+        }
+
+        $limitThreads = (int)($req->query('limit_threads', 10));
+        $limitThreads = max(1, min($limitThreads, 50));
+
+        $limitMsgs = (int)($req->query('limit_messages', 30));
+        $limitMsgs = max(1, min($limitMsgs, 100));
+
+        $safe = addcslashes($q, "%_\\");
+        $like = "%{$safe}%";
+
+        // threads
+        $threads = ChannelThread::query()
+            ->where('group_channel_id', $channel->id)
+            ->where(function ($w) use ($like) {
+                $w->where('title', 'like', $like)
+                ->orWhere('username', 'like', $like)
+                ->orWhere('first_name', 'like', $like)
+                ->orWhere('last_name', 'like', $like);
+            })
+            ->orderByDesc('last_message_at')
+            ->limit($limitThreads)
+            ->get([
+                'id',
+                'external_chat_id',
+                'title',
+                'username',
+                'first_name',
+                'last_name',
+                'last_message_text',
+                'last_message_at',
+            ]);
+
+        // messages (в рамках этого channel)
+        $messages = ChannelMessage::query()
+            ->whereHas('thread', function ($t) use ($channel) {
+                $t->where('group_channel_id', $channel->id);
+            })
+            ->whereNotNull('text')
+            ->where('text', 'like', $like)
+            ->orderByDesc('id')
+            ->limit($limitMsgs)
+            ->get([
+                'id',
+                'channel_thread_id',
+                'direction',
+                'text',
+                'provider_date',
+                'created_at',
+            ]);
+
+        return response()->json([
+            'threads' => $threads,
+            'messages' => $messages,
+        ]);
+    }
+
+    public function telegramThread(Request $request, ChannelThread $thread)
+    {
+        $channel = $thread->channel;
+        $group = $channel->group;
+
+        abort_unless(
+            $group->users()->whereKey($request->user()->id)->exists(),
+            403,
+            'Forbidden'
+        );
+
+        $q = trim((string) $request->query('q', ''));
+        abort_unless($q !== '', 422, 'Query q is required');
+
+        $limit = (int) $request->query('limit', 50);
+        $limit = max(1, min($limit, 200));
+
+        $items = $thread->messages()
+            ->select([
+                'id',
+                'channel_thread_id',
+                'direction',
+                'external_message_id',
+                'external_update_id',
+                'sender_external_id',
+                'text',
+                'payload',
+                'provider_date',
+                'created_at',
+            ])
+            ->whereNotNull('text')
+            ->where('text', 'like', '%' . addcslashes($q, '%_\\') . '%')
+            ->orderByDesc('id')
+            ->limit($limit)
+            ->get();
+
+        return response()->json([
+            'q' => $q,
+            'limit' => $limit,
+            'count' => $items->count(),
+            'data' => $items,
         ]);
     }
 

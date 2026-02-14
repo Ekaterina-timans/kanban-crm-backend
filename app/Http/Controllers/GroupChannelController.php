@@ -127,6 +127,8 @@ class GroupChannelController extends Controller
                 'first_name',
                 'last_name',
                 'last_update_id',
+                'last_message_text',
+                'last_message_at',
                 'updated_at',
                 'created_at',
             ])
@@ -152,8 +154,11 @@ class GroupChannelController extends Controller
 
         abort_unless($channel->provider === 'telegram', 422, 'This channel is not telegram provider');
 
-        $token = (string) config('services.telegram.bot_token');
-        abort_unless($token !== '', 500, 'Telegram bot token is not configured');
+        $data = $request->validate([
+            'bot_token' => 'required|string|min:20|max:255',
+        ]);
+
+        $token = trim($data['bot_token']);
 
         // Проверяем токен через getMe
         $resp = \Illuminate\Support\Facades\Http::timeout(10)
@@ -166,12 +171,21 @@ class GroupChannelController extends Controller
 
         $bot = $json['result'] ?? [];
 
+        // сохраняем токен в secrets
+        $secrets = $channel->secrets ?? [];
+        $secrets['telegram'] = array_merge($secrets['telegram'] ?? [], [
+            'bot_token' => $token,
+        ]);
+        $channel->secrets = $secrets;
+
+        // settings: инфо о боте
         $settings = $channel->settings ?? [];
-        $settings['telegram'] = [
+        $settings['telegram'] = array_merge($settings['telegram'] ?? [], [
             'bot_username' => $bot['username'] ?? null,
             'bot_name' => $bot['first_name'] ?? null,
             'bot_id' => $bot['id'] ?? null,
-        ];
+            'last_update_id' => null,
+        ]);
 
         $channel->settings = $settings;
         $channel->status = 'active';
@@ -183,4 +197,40 @@ class GroupChannelController extends Controller
         ]);
     }
 
+    public function disconnectTelegram(Request $request, Group $group, GroupChannel $channel)
+    {
+        $this->requireGroupAdmin($group, (int)$request->user()->id);
+        $this->requireChannelInGroup($group, $channel);
+
+        abort_unless($channel->provider === 'telegram', 422, 'This channel is not telegram provider');
+
+        // Стираем токен
+        $secrets = $channel->secrets ?? [];
+        if (isset($secrets['telegram'])) {
+            unset($secrets['telegram']['bot_token']);
+            // если вдруг telegram пустой — можно целиком убрать
+            if (empty($secrets['telegram'])) {
+                unset($secrets['telegram']);
+            }
+        }
+        $channel->secrets = $secrets;
+
+        // чистим telegram settings, чтобы UI показывал "не подключено"
+        $settings = $channel->settings ?? [];
+        $settings['telegram'] = array_merge($settings['telegram'] ?? [], [
+            'bot_username'   => null,
+            'bot_name'       => null,
+            'bot_id'         => null,
+            'last_update_id' => null,
+        ]);
+        $channel->settings = $settings;
+
+        $channel->status = 'disabled';
+        $channel->save();
+
+        return response()->json([
+            'ok' => true,
+            'channel' => $channel->fresh(),
+        ]);
+    }
 }

@@ -25,6 +25,7 @@ use App\Http\Controllers\NotificationSettingsController;
 use App\Http\Controllers\PermissionController;
 use App\Http\Controllers\SearchController;
 use App\Http\Controllers\SpaceUserController;
+use App\Http\Controllers\TelegramFileController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\UserPreferenceController;
 use App\Http\Controllers\UserStatisticsController;
@@ -144,8 +145,10 @@ Route::middleware('auth:sanctum')->group(function () {
                 Route::post('/', [GroupChannelController::class, 'store']); // создание канала
                 Route::patch('/{channel}', [GroupChannelController::class, 'update']);
                 Route::delete('/{channel}', [GroupChannelController::class, 'destroy']);
+                Route::get('/{channel}/search', [SearchController::class, 'telegramGlobal'])->name('search.telegram.global');
                 Route::get('/{channel}/threads', [GroupChannelController::class, 'threadsIndex']);
                 Route::post('/{channel}/connect/telegram', [GroupChannelController::class, 'connectTelegram']); // подключение telegram и активация
+                Route::post('/{channel}/disconnect/telegram', [GroupChannelController::class, 'disconnectTelegram']);
             });
         });  
     });
@@ -153,6 +156,8 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::prefix('/threads')->group(function () {
         Route::get('/{thread}/messages', [ChannelMessageController::class, 'index']); // история сообщений
         Route::post('/{thread}/messages/send', [ChannelMessageController::class, 'send']); // отправка сообщений в тред
+        Route::get('/{thread}/messages/search', [SearchController::class, 'telegramThread'])->name('search.telegram.thread');
+        Route::get('/{thread}/telegram-file', [TelegramFileController::class, 'download']);
     });
 
     Route::prefix('/statistics')->group(function () {
